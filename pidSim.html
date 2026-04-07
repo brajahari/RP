@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Second-Order Plant + PID (zeta, wn, K, Kp, Ki, Kd)</title>
+  <style>
+    :root { --bg:#0b0f14; --panel:#121826; --text:#e6edf3; --muted:#9aa4b2; --accent:#5cc8ff; --accent2:#7ee787; --danger:#ff6b6b; }
+    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:var(--bg); color:var(--text); }
+    header { padding:16px 20px; border-bottom:1px solid #1f2a37; }
+    header h1 { font-size:16px; margin:0; }
+    header p { margin:6px 0 0; color:var(--muted); font-size:12px; }
+    .wrap { display:grid; grid-template-columns: 360px 1fr; gap:14px; padding:14px; }
+    .card { background:var(--panel); border:1px solid #1f2a37; border-radius:12px; }
+    .controls { padding:14px; }
+    .controls h2 { margin:0 0 10px; font-size:14px; }
+    .row { display:grid; grid-template-columns: 1fr 120px; align-items:center; gap:10px; padding:7px 0; border-bottom:1px dashed #223044; }
+    .row:last-child{ border-bottom:none; }
+    label { font-size:12px; color:var(--muted); }
+    input[type=number]{ width:100%; padding:8px 10px; border-radius:10px; border:1px solid #263244; background:#0e1420; color:var(--text); }
+    input[type=range]{ width:100%; }
+    .buttons { display:flex; gap:10px; padding-top:0; padding-bottom:12px; }
+    button { cursor:pointer; border:1px solid #2b3b52; background:#0e1420; color:var(--text); padding:10px 12px; border-radius:10px; font-weight:600; }
+    button.primary{ border-color:#2a6f9a; background:#0b2232; }
+    button:hover{ filter:brightness(1.1); }
+    .small { font-size:12px; color:var(--muted); line-height:1.35; }
+    .status { padding:12px 14px; border-top:1px solid #1f2a37; color:var(--muted); font-size:12px; display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; }
+    .plot { padding:10px; }
+    canvas { width:100%; height:520px; display:block; border-radius:10px; background:#0a111b; border:1px solid #1f2a37; }
+    .legend { display:flex; gap:14px; padding:10px 12px 0; color:var(--muted); font-size:12px; }
+    .dot { width:10px; height:10px; border-radius:50%; display:inline-block; margin-right:6px; }
+    .y { background:var(--accent); }
+    .r { background:var(--accent2); }
+    .err { color: var(--danger); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Bala : Second Order System + PID Tuning</h1>
+  </header>
+
+  <div class="wrap">
+    <section class="card controls">
+
+      <!-- ✅ Buttons moved to the TOP -->
+      <div class="buttons">
+        <button class="primary" id="runBtn">Run simulation</button>
+        <button id="resetBtn">Reset defaults</button>
+      </div>
+
+      <div class="row"><label>ζ - Damping ratio  [0->2]</label><input id="zeta" type="number" step="0.1" value="1.0" min="0" /></div>
+      <div class="row"><label>ωₙ - Natural frequency [0->4]</label><input id="wn" type="number" step="0.2" value="1.0" min="0.0" /></div>
+      <div class="row"><label>K - Gain </label><input id="K" type="number" step="1" value="1.0" /></div>
+      <div class="row"><label>R - Setpoint</label><input id="r" type="number" step="1" value="1" /></div>
+      <div class="row"><label>Kp [0->50] - increase gain</label><input id="Kp" type="number" step="1" value="50" min="0" /></div>
+      <div class="row"><label>Ki [0->20] - decrease SS error</label><input id="Ki" type="number" step="1" value="0" min="0" /></div>
+      <div class="row"><label>Kd [0->20] - decrease osc/overshoot</label><input id="Kd" type="number" step="1" value="0" min="0" /></div>
+      <div class="row"><label>dt (s)</label><input id="dt" type="number" step="0.001" value="0.01" min="0.0001" /></div>
+      <div class="row"><label>Total time T (s)</label><input id="T" type="number" step="0.1" value="10" min="0.1" /></div>
+      <div class="row"><label>u limit</label><input id="u_limit" type="number" step="0.1" value="10" min="0.1" /></div>
+      <div class="row"><label>Integral clamp (anti-windup)</label><input id="I_lim" type="number" step="0.1" value="2" min="0" /></div>
+
+      <div class="status">
+        <div>Cost: <span id="costOut">—</span></div>
+        <div>Notes: <span id="noteOut">Ready</span></div>
+      </div>
+    </section>
+
+    <section class="card plot">
+      <div class="legend">
+        <span><span class="dot y"></span>y(t)</span>
+        <span><span class="dot r"></span>setpoint r</span>
+      </div>
+      <canvas id="plot" width="1200" height="520"></canvas>
+      <div class="status">
+        <div>Stability guard: stops if |y|&gt;10 or |y'|&gt;50</div></br>
+        <div>Integrator: Euler</div></br>
+        <div>Plant: y'' + 2ζωₙ y' + ωₙ² y = K·ωₙ² u &nbsp; | &nbsp; PID: u = Kp·e + Ki∫e dt + Kd·de/dt &nbsp; (Euler simulation)</div>
+      </div>
+    </section>
+  </div>
+
+<script>
+  function clamp(v, lo, hi){ return Math.max(lo, Math.min(hi, v)); }
+
+  function simulatePIDSecondOrder(params){
+    const {Kp, Ki, Kd, zeta, wn, K, dt, T, r, u_limit, I_lim} = params;
+    const n = Math.floor(T / dt);
+
+    // states
+    let x1 = 0.0; // y
+    let x2 = 0.0; // ydot
+
+    let I = 0.0;
+    let e_prev = 0.0;
+
+    // cost weights
+    const lam_u = 0.02;
+    const lam_os = 2.0;
+
+    let cost = 0.0;
+    let y_max = -1e9;
+
+    const tArr = new Float64Array(n);
+    const yArr = new Float64Array(n);
+
+    let stoppedEarly = false;
+
+    for(let kStep=0; kStep<n; kStep++){
+      const t = kStep * dt;
+      const y = x1;
+      const e = r - y;
+
+      // PID
+      I += e * dt;
+      I = clamp(I, -I_lim, I_lim);
+      const D = (e - e_prev) / dt;
+
+      let u = Kp*e + Ki*I + Kd*D;
+      u = clamp(u, -u_limit, u_limit);
+
+      // plant: y'' + 2*zeta*wn*y' + wn^2*y = K*wn^2*u
+      const x1_dot = x2;
+      const x2_dot = -2.0*zeta*wn*x2 - (wn*wn)*x1 + (K*(wn*wn))*u;
+
+      x1 += dt * x1_dot;
+      x2 += dt * x2_dot;
+
+      y_max = Math.max(y_max, x1);
+
+      // cost
+      cost += Math.abs(e) * dt + lam_u * (u*u) * dt;
+      e_prev = e;
+
+      tArr[kStep] = t;
+      yArr[kStep] = x1;
+
+      // stability guard
+      if(Math.abs(x1) > 10 || Math.abs(x2) > 50){
+        cost += 1e6;
+        stoppedEarly = true;
+        // truncate arrays by returning slices
+        return {
+          cost: cost,
+          t: tArr.slice(0, kStep+1),
+          y: yArr.slice(0, kStep+1),
+          overshoot: Math.max(0, y_max - r),
+          stoppedEarly
+        };
+      }
+    }
+
+    const overshoot = Math.max(0, y_max - r);
+    cost += lam_os * overshoot;
+
+    return { cost, t: tArr, y: yArr, overshoot, stoppedEarly };
+  }
+
+  function drawPlot(canvas, t, y, r){
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width, H = canvas.height;
+    ctx.clearRect(0,0,W,H);
+
+    // compute bounds
+    let ymin = Infinity, ymax = -Infinity;
+    for(let i=0;i<y.length;i++){
+      const v = y[i];
+      if(v<ymin) ymin=v;
+      if(v>ymax) ymax=v;
+    }
+    ymin = Math.min(ymin, r);
+    ymax = Math.max(ymax, r);
+    if(!isFinite(ymin) || !isFinite(ymax)) { ymin=0; ymax=1; }
+    if(Math.abs(ymax-ymin) < 1e-6){ ymax = ymin + 1; }
+
+    // padding
+    const padL = 50, padR = 14, padT = 18, padB = 34;
+    const plotW = W - padL - padR;
+    const plotH = H - padT - padB;
+
+    // axis
+    ctx.strokeStyle = '#1f2a37';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(padL, padT);
+    ctx.lineTo(padL, padT + plotH);
+    ctx.lineTo(padL + plotW, padT + plotH);
+    ctx.stroke();
+
+    // grid + labels (simple)
+    ctx.fillStyle = '#9aa4b2';
+    ctx.font = '12px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+
+    const x0 = t[0], x1 = t[t.length-1];
+    const y0 = ymin, y1b = ymax;
+
+    function xMap(tv){ return padL + (tv - x0) / (x1 - x0) * plotW; }
+    function yMap(yv){ return padT + (y1b - yv) / (y1b - y0) * plotH; }
+
+    // y ticks
+    const yTicks = 5;
+    for(let j=0;j<=yTicks;j++){
+      const yy = y0 + (y1b-y0)*j/yTicks;
+      const py = yMap(yy);
+      ctx.strokeStyle = '#132033';
+      ctx.beginPath();
+      ctx.moveTo(padL, py);
+      ctx.lineTo(padL+plotW, py);
+      ctx.stroke();
+      ctx.fillText(yy.toFixed(2), 6, py+4);
+    }
+
+    // x ticks
+    const xTicks = 6;
+    for(let j=0;j<=xTicks;j++){
+      const tt = x0 + (x1-x0)*j/xTicks;
+      const px = xMap(tt);
+      ctx.strokeStyle = '#132033';
+      ctx.beginPath();
+      ctx.moveTo(px, padT);
+      ctx.lineTo(px, padT+plotH);
+      ctx.stroke();
+      ctx.fillText(tt.toFixed(1), px-10, padT+plotH+22);
+    }
+
+    // setpoint line
+    ctx.strokeStyle = '#7ee787';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.moveTo(padL, yMap(r));
+    ctx.lineTo(padL+plotW, yMap(r));
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // y(t) curve
+    ctx.strokeStyle = '#5cc8ff';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for(let i=0;i<y.length;i++){
+      const px = xMap(t[i]);
+      const py = yMap(y[i]);
+      if(i===0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+
+    // title-ish
+    ctx.fillStyle = '#e6edf3';
+    ctx.fillText('Response y(t)', padL, 14);
+  }
+
+  function readParams(){
+    const get = (id) => parseFloat(document.getElementById(id).value);
+    return {
+      zeta: get('zeta'),
+      wn: get('wn'),
+      K: get('K'),
+      Kp: get('Kp'),
+      Ki: get('Ki'),
+      Kd: get('Kd'),
+      r: get('r'),
+      dt: get('dt'),
+      T: get('T'),
+      u_limit: get('u_limit'),
+      I_lim: get('I_lim')
+    };
+  }
+
+  function setDefaults(){
+    const defaults = {
+      zeta: 1.0, wn: 1.0, K: 1.0,
+      Kp: 50, Ki: 0, Kd: 0,
+      r: 1, dt: 0.01, T: 10,
+      u_limit: 10, I_lim: 2
+    };
+    for(const [k,v] of Object.entries(defaults)){
+      document.getElementById(k).value = v;
+    }
+    document.getElementById('costOut').textContent = '—';
+    document.getElementById('noteOut').textContent = 'Ready';
+  }
+
+  function validate(p){
+    if(!(p.dt > 0 && p.T > 0)) return 'dt and T must be > 0';
+    if(!(p.wn > 0)) return 'wn must be > 0';
+    if(!(p.zeta >= 0)) return 'zeta must be ≥ 0';
+    if(!(p.u_limit > 0)) return 'u_limit must be > 0';
+    return null;
+  }
+
+  const canvas = document.getElementById('plot');
+  const runBtn = document.getElementById('runBtn');
+  const resetBtn = document.getElementById('resetBtn');
+
+  // ✅ central runner (same logic as clicking Run)
+  function runSimulation(){
+    const p = readParams();
+    const err = validate(p);
+    if(err){
+      document.getElementById('noteOut').innerHTML = '<span class="err">' + err + '</span>';
+      return;
+    }
+
+    const res = simulatePIDSecondOrder(p);
+    document.getElementById('costOut').textContent = res.cost.toFixed(4);
+
+    let note = res.stoppedEarly ? 'Stopped early (unstable or diverging).' : 'OK';
+    note += ' Overshoot: ' + res.overshoot.toFixed(3);
+    document.getElementById('noteOut').textContent = note;
+
+    drawPlot(canvas, res.t, res.y, p.r);
+  }
+
+  // ✅ debounce so typing doesn't spam simulation
+  let _autoTimer = null;
+  function scheduleAutoRun(){
+    if(_autoTimer) clearTimeout(_autoTimer);
+    _autoTimer = setTimeout(runSimulation, 80);
+  }
+
+  runBtn.addEventListener('click', runSimulation);
+
+  resetBtn.addEventListener('click', () => {
+    setDefaults();
+    runSimulation(); // plot defaults once (same as before)
+  });
+
+  // ✅ AUTO-SIMULATE ON ANY INPUT CHANGE (UI unchanged)
+  const ids = ['zeta','wn','K','r','Kp','Ki','Kd','dt','T','u_limit','I_lim'];
+  for(const id of ids){
+    const el = document.getElementById(id);
+    // input = while typing/spinning; change = commit (covers various browsers)
+    el.addEventListener('input', scheduleAutoRun);
+    el.addEventListener('change', scheduleAutoRun);
+  }
+
+  // Initial draw
+  setDefaults();
+  runSimulation();
+</script>
+</body>
+</html>
+``

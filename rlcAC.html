@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Series RLC AC Simulator (Compact 2×2)</title>
+  <style>
+    :root{--bg:#0b1220;--card:#111b2e;--text:#e8eefc;--muted:#a9b5d1;--accent:#4cc9f0;--accent2:#f72585;--grid:#1d2a46;}
+    body{margin:0;background:linear-gradient(180deg,var(--bg),#050914);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;}
+    header{padding:14px 16px 8px;}
+    h1{margin:0 0 6px;font-size:18px;letter-spacing:.2px;}
+    .sub{color:var(--muted);font-size:12px;line-height:1.35;}
+
+    main{display:grid;grid-template-columns:0.5fr 1fr;grid-template-rows:auto auto;gap:12px;padding:10px 16px 16px;align-items:stretch;}
+    @media (max-width: 980px){main{grid-template-columns:1fr;grid-template-rows:auto;}}
+
+    .card{background:rgba(17,27,46,.92);border:1px solid rgba(76,201,240,.16);border-radius:14px;box-shadow:0 10px 22px rgba(0,0,0,.33);}
+    .card h2{font-size:18px;margin:0;padding:12px 12px 8px;border-bottom:1px solid rgba(169,181,209,.14);}
+    .content,.panel{padding:12px;}
+
+    label{display:block;font-size:11px;color:var(--muted);margin:8px 0 5px;}
+    input[type="number"]{width:100%;box-sizing:border-box;padding:9px 9px;border-radius:10px;border:1px solid rgba(169,181,209,.22);background:#0b1326;color:var(--text);outline:none;}
+    input[type="number"]:focus{border-color:rgba(76,201,240,.55);box-shadow:0 0 0 3px rgba(76,201,240,.12);}
+
+    .row{display:flex;grid-template-columns:1fr 1fr;gap:10px;}
+
+    /* button style kept (not used now) */
+    button{margin-top:10px;width:100%;padding:10px 12px;border:0;border-radius:12px;background:linear-gradient(90deg,var(--accent),#4895ef);color:#04101a;font-weight:800;cursor:pointer;}
+    button:hover{filter:brightness(1.05);}
+
+    .note{margin-top:8px;color:var(--muted);font-size:11.5px;line-height:1.35;}
+    .kpi{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+    .kpi .box{background:rgba(11,19,38,.75);border:1px solid rgba(169,181,209,.14);border-radius:12px;padding:9px;}
+    .kpi .t{color:var(--muted);font-size:10.5px;margin-bottom:4px;}
+    .kpi .v{font-size:13.5px;font-weight:800;}
+
+    canvas{width:100%;height:200px;background:rgba(11,19,38,.55);border:1px solid rgba(169,181,209,.14);border-radius:12px;}
+    .small{height:200px;}
+
+    .legend{display:flex;gap:14px;align-items:center;margin:8px 0 0;font-size:11.5px;color:var(--muted);}
+    .sw{width:10px;height:10px;border-radius:3px;display:inline-block;}
+    .sw.v{background:var(--accent);} .sw.i{background:var(--accent2);}
+
+    code{background:rgba(255,255,255,.06);padding:2px 6px;border-radius:6px;}
+
+    .checkline{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      margin:8px 0 6px;
+      color:var(--muted);
+      font-size:11.5px;
+      user-select:none;
+    }
+    .checkline input{
+      width:auto !important;
+      transform:translateY(1px);
+    }
+
+    /* New label replacing the simulate button */
+    .modebar{
+      margin-top:10px;
+      width:50%;
+      padding:10px 12px;
+      border-radius:12px;
+      border:1px solid rgba(169,181,209,.18);
+      background:rgba(11,19,38,.65);
+      color:var(--text);
+      font-weight:800;
+      letter-spacing:.2px;
+    }
+    .modebar small{
+      font-weight:600;
+      color:var(--muted);
+      margin-left:8px;
+    }
+  </style>
+</head>
+<body>
+<header>
+  <h1>Series RLC AC Simulator</h1>
+  <div class="sub"></div>
+</header>
+
+<main>
+  <section class="card" id="card-input" style="grid-row:1 / span 2;">
+    <h2>Input</h2>
+    <div class="content">
+      <div class="row">
+        <div>
+          <label for="E">E<sub>rms</sub></label>
+          <input id="E" type="number" value="10" step="0.1" />
+        </div>
+        <div>
+          <label for="f">f (Hz) =ω/2𝛑 </label>
+          <input id="f" type="number" value="50" step="5" />
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="R">R (Ω)</label>
+          <input id="R" type="number" value="1000" step="0.1" />
+        </div>
+
+        <!-- L with enable/disable -->
+        <div>
+          <div class="checkline">
+            <!-- 'unchecked' removed (default is unchecked) -->
+            <input id="useL" type="checkbox" />
+            <span>L (H)</span>
+          </div>
+          <input id="L" type="number" value="1" step="0.01" />
+        </div>
+
+        <!-- C with enable/disable (µF input) -->
+        <div>
+          <div class="checkline">
+            <!-- 'unchecked' removed (default is unchecked) -->
+            <input id="useC" type="checkbox" />
+            <span>C (µF)</span>
+          </div>
+          <input id="C" type="number" value="1" step="1" />
+        </div>
+      </div>
+
+
+      <div class="modebar" id="modeLabel">
+        Mode: — <small id="modeHint"></small>
+      </div>
+
+	
+      <div class="panel" style="margin-top:8px;">
+        <div class="kpi">
+          <div class="box"><div class="t">|I<sub>rms</sub>| (A)</div><div class="v" id="Irms">—</div></div>
+          <div class="box"><div class="t">∠I<sub>rms</sub> (deg)</div><div class="v" id="Irmsang">—</div></div>
+        </div>
+	
+        <div class="kpi" style="margin-top:10px;">
+          <div class="box"><div class="t">|Z| (Ω)</div><div class="v" id="Zmag">—</div></div>
+          <div class="box"><div class="t">∠Z (deg)</div><div class="v" id="Zang">—</div></div>
+        </div>
+
+        <div class="note" id="extra">—</div>
+        <div class="note">
+          Resonance (when L &amp; C enabled): <code>f₀ = 1/(2π√(L·C))</code>. (Input C in µF; internally converted to F)
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" id="card-wave">
+    <h2>2) Waveform</h2>
+    <div class="panel">
+      <canvas id="wave"></canvas>
+      <div class="legend">
+        <span><span class="sw v"></span> V(t)</span>
+        <span><span class="sw i"></span> I(t)</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" id="card-polar">
+    <h2>4) Polar</h2>
+    <div class="panel">
+      <canvas id="phasor" class="small"></canvas>
+      <div class="note">Fixed-length phasors. Blue: V at 0°. Pink: I at ∠I.</div>
+    </div>
+  </section>
+</main>
+
+<script>
+  // Complex helper
+  function C(re, im){ return {re, im}; }
+  function cMul(a,b){ return C(a.re*b.re - a.im*b.im, a.re*b.im + a.im*b.re); }
+  function cInv(a){ const d=a.re*a.re+a.im*a.im; return C(a.re/d, -a.im/d); }
+  function cDiv(a,b){ return cMul(a,cInv(b)); }
+  function cAbs(a){ return Math.hypot(a.re,a.im); }
+  function cArgDeg(a){ return Math.atan2(a.im,a.re)*180/Math.PI; }
+
+  function nice(v){
+    if(!isFinite(v)) return '—';
+    const av=Math.abs(v);
+    if(av===0) return '0';
+    if(av>=1000 || av<0.001) return v.toExponential(3);
+    return v.toFixed(4).replace(/\.?(0+)$/,'');
+  }
+
+  function setupCanvas(canvas){
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.height * dpr);
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    return {ctx, w: rect.width, h: rect.height};
+  }
+
+  function drawGrid(ctx, w, h){
+    ctx.clearRect(0,0,w,h);
+    ctx.save();
+    ctx.strokeStyle = 'rgba(29,42,70,0.9)';
+    ctx.lineWidth = 1;
+    const step = 40;
+    for(let x=0;x<=w;x+=step){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,h); ctx.stroke(); }
+    for(let y=0;y<=h;y+=step){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke(); }
+    ctx.restore();
+  }
+
+  function drawAxes(ctx, w, h){
+    ctx.save();
+    ctx.strokeStyle='rgba(169,181,209,0.6)';
+    ctx.lineWidth=1.2;
+    ctx.beginPath(); ctx.moveTo(0,h/2); ctx.lineTo(w,h/2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(w/2,0); ctx.lineTo(w/2,h); ctx.stroke();
+    ctx.restore();
+  }
+
+  function arrow(ctx, x0,y0,x1,y1, color){
+    const head=10;
+    const dx=x1-x0, dy=y1-y0;
+    const ang=Math.atan2(dy,dx);
+    ctx.save();
+    ctx.strokeStyle=color;
+    ctx.fillStyle=color;
+    ctx.lineWidth=2;
+    ctx.beginPath(); ctx.moveTo(x0,y0); ctx.lineTo(x1,y1); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x1,y1);
+    ctx.lineTo(x1-head*Math.cos(ang-Math.PI/7), y1-head*Math.sin(ang-Math.PI/7));
+    ctx.lineTo(x1-head*Math.cos(ang+Math.PI/7), y1-head*Math.sin(ang+Math.PI/7));
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+
+  function text(ctx, s, x,y, color='rgba(232,238,252,0.9)'){
+    ctx.save();
+    ctx.fillStyle=color;
+    ctx.font='12px system-ui, -apple-system, Segoe UI, Roboto, Arial';
+    ctx.fillText(s,x,y);
+    ctx.restore();
+  }
+
+  function drawWaveforms(E, f, Ipk, IangDeg){
+    const canvas=document.getElementById('wave');
+    const {ctx, w, h} = setupCanvas(canvas);
+    drawGrid(ctx,w,h);
+
+    const T = 1/Math.max(f, 1e-9);
+    const t0 = 0, t1 = 2*T;
+    const N = 700;
+
+    const vmax = Math.max(Math.abs(E), 1e-12);
+    const imax = Math.max(Math.abs(Ipk), 1e-12);
+
+    function xMap(t){ return (t - t0)/(t1 - t0) * w; }
+    function yMap(v, scale){ return h/2 - (v/scale) * (h*0.40); }
+
+    // V(t)
+    ctx.save();
+    ctx.strokeStyle='#4cc9f0';
+    ctx.lineWidth=2;
+    ctx.beginPath();
+    for(let k=0;k<=N;k++){
+      const t = t0 + (t1-t0)*k/N;
+      const v = E*Math.sin(2*Math.PI*f*t);
+      const x = xMap(t);
+      const y = yMap(v, vmax);
+      if(k===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    }
+    ctx.stroke();
+    ctx.restore();
+
+    // I(t)
+    const phi = IangDeg*Math.PI/180;
+    ctx.save();
+    ctx.strokeStyle='#f72585';
+    ctx.lineWidth=2;
+    ctx.beginPath();
+    for(let k=0;k<=N;k++){
+      const t = t0 + (t1-t0)*k/N;
+      const i = Ipk*Math.sin(2*Math.PI*f*t + phi);
+      const x = xMap(t);
+      const y = yMap(i, imax);
+      if(k===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawPhasor(E, Ipk, IangDeg){
+    const canvas=document.getElementById('phasor');
+    const {ctx, w, h} = setupCanvas(canvas);
+
+    drawGrid(ctx,w,h);
+    drawAxes(ctx,w,h);
+
+    const cx=w/2, cy=h/2;
+    const radius = Math.min(w,h)*0.35;
+    const Vlen = radius;
+    const Ilen = radius;
+
+    arrow(ctx, cx, cy, cx + Vlen, cy, '#4cc9f0');
+
+    const a = IangDeg*Math.PI/180;
+    arrow(ctx, cx, cy, cx + Ilen*Math.cos(a), cy - Ilen*Math.sin(a), '#f72585');
+
+    const arcR = radius*0.55;
+    ctx.save();
+    ctx.strokeStyle='rgba(232,238,252,0.65)';
+    ctx.lineWidth=2;
+    const start = 0;
+    const end = -a;
+    ctx.beginPath();
+    ctx.arc(cx,cy,arcR, start, end, a>0);
+    ctx.stroke();
+    ctx.restore();
+
+    text(ctx, `∠I = ${nice(IangDeg)}°`, 10, 18);
+    text(ctx, `V=${nice(E)} (peak)`, 10, 36, 'rgba(76,201,240,0.95)');
+    text(ctx, `|I|=${nice(Ipk)} (peak)`, 10, 54, 'rgba(247,37,133,0.95)');
+  }
+
+  function setAllOutputsDash(msg='—'){
+    document.getElementById('Irms').textContent = '—';
+    document.getElementById('Irmsang').textContent = '—';
+    document.getElementById('Zmag').textContent = '—';
+    document.getElementById('Zang').textContent = '—';
+    document.getElementById('extra').textContent = msg;
+  }
+
+  function circuitMode(useL, useC){
+    if(useL && useC) return 'RLC';
+    if(useL && !useC) return 'RL';
+    if(!useL && useC) return 'RC';
+    return 'R';
+  }
+
+  function simulate(){
+    const E = parseFloat(document.getElementById('E').value);
+    const f = parseFloat(document.getElementById('f').value);
+    const R = parseFloat(document.getElementById('R').value);
+
+    const useL = document.getElementById('useL').checked;
+    const useC = document.getElementById('useC').checked;
+
+    const Lraw = parseFloat(document.getElementById('L').value);
+    const CuF  = parseFloat(document.getElementById('C').value);
+    const Cval = CuF * 1e-6; // µF -> F
+
+    // Update mode label (always)
+    document.getElementById('modeLabel').firstChild.textContent = `Circuit Type : ${circuitMode(useL,useC)}`;
+    document.getElementById('modeHint').textContent = '';
+
+    // Silent validation (no alerts)
+    if(!isFinite(E) || !isFinite(f) || !isFinite(R) || f<=0 || R<0){
+      setAllOutputsDash('Enter valid E, f>0, R≥0.');
+      return;
+    }
+    if(useL && (!isFinite(Lraw) || Lraw<0)){
+      setAllOutputsDash('Enter valid L (H) ≥ 0 or disable L.');
+      return;
+    }
+    if(useC && (!isFinite(CuF) || CuF<0)){
+      setAllOutputsDash('Enter valid C (µF) ≥ 0 or disable C.');
+      return;
+    }
+
+    const w = 2*Math.PI*f;
+
+    const Xl = useL ? (w*Lraw) : 0;                       // L disabled => no XL
+    const Xc = useC ? ((Cval>0) ? (1/(w*Cval)) : Infinity) : 0;  // C disabled => no XC
+
+    let X = Xl - Xc;
+    if(!isFinite(X)) X = (useC && Cval===0 ? 1e30 : X);
+
+    const Z = C(R, X);
+    const V = C(E, 0);
+    const I = cDiv(V, Z);
+
+    const Imag = cAbs(I);
+    const Iang = cArgDeg(I);
+    const Zmag = cAbs(Z);
+    const Zang = cArgDeg(Z);
+
+    document.getElementById('Irms').textContent = nice(Imag);
+    document.getElementById('Irmsang').textContent = nice(Iang);
+    document.getElementById('Zmag').textContent = nice(Zmag);
+    document.getElementById('Zang').textContent = nice(Zang);
+
+    const pf = Math.cos(Iang*Math.PI/180);
+    const leadLag = (Iang>0) ? 'Current leads (net capacitive)' : (Iang<0 ? 'Current lags (net inductive)' : 'In phase (purely resistive)');
+    const f0 = (useL && useC && Lraw>0 && Cval>0) ? (1/(2*Math.PI*Math.sqrt(Lraw*Cval))) : NaN;
+
+    const msg = [
+      `ω=${nice(w)} rad/s`,
+      useL ? `XL=${nice(Xl)} Ω` : `XL=0 (L disabled)`,
+      useC ? `XC=${isFinite(Xc) ? nice(Xc) : '∞'} Ω` : `XC=0 (C disabled)`,
+      `PF≈${nice(pf)}`,
+      leadLag,
+      isFinite(f0) ? `f₀≈${nice(f0)} Hz` : (useL && useC ? 'f₀: requires L>0, C>0' : 'f₀: N/A (need L & C)')
+    ].join(' · ');
+    document.getElementById('extra').textContent = msg;
+
+    drawWaveforms(E, f, Imag, Iang);
+    drawPhasor(E, Imag, Iang);
+  }
+
+  function debounce(fn, ms=200){
+    let t;
+    return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+  }
+
+  function syncUI(){
+    const useL = document.getElementById('useL').checked;
+    const useC = document.getElementById('useC').checked;
+
+    const lInput = document.getElementById('L');
+    const cInput = document.getElementById('C');
+
+    lInput.disabled = !useL;
+    cInput.disabled = !useC;
+
+    lInput.style.opacity = useL ? '1' : '0.5';
+    cInput.style.opacity = useC ? '1' : '0.5';
+
+    // Update mode label immediately when toggled
+    document.getElementById('modeLabel').firstChild.textContent = `Mode: ${circuitMode(useL,useC)} `;
+  }
+
+  const autoSimulate = debounce(() => {
+    syncUI();
+    simulate();
+  }, 120);
+
+  // Auto-run on input changes
+  ['E','f','R','L','C'].forEach(id => {
+    const el = document.getElementById(id);
+    el.addEventListener('input', autoSimulate);
+    el.addEventListener('change', autoSimulate);
+  });
+
+  document.getElementById('useL').addEventListener('change', autoSimulate);
+  document.getElementById('useC').addEventListener('change', autoSimulate);
+
+  window.addEventListener('resize', debounce(simulate, 150));
+
+  // Initial
+  syncUI();
+  simulate();
+</script>
+</body>
+</html>
+``

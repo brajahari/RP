@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Sin Wave with Phasor</title>
+
+<style>
+    body {
+        font-family: Arial, sans-serif;
+        background: #121212;
+        color: #e0e0e0;
+        display: flex;
+        justify-content: center;
+    }
+
+    .container {
+        margin-top: 20px;
+    }
+
+    canvas {
+        background: #1e1e1e;
+        border: 1px solid #555;
+        display: block;
+        margin-bottom: 20px;
+    }
+
+    h2 {
+        text-align: center;
+        margin-bottom: 10px;
+        color: #ffffff;
+    }
+
+    .controls-phasor-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 40px;
+    }
+
+    .controls {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .control-row {
+        margin: 8px 0;
+        font-size: 16px;
+    }
+
+    .control-row button {
+        margin: 0 4px;
+        padding: 6px 12px;
+        font-size: 14px;
+        cursor: pointer;
+        background: #2a2a2a;
+        color: #ffffff;
+        border: 1px solid #555;
+        border-radius: 4px;
+    }
+
+    .control-row button:hover {
+        background: #3a3a3a;
+    }
+
+    .phasor-reset-container {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+    }
+
+    .phasor-container {
+        flex-shrink: 0;
+    }
+
+    .reset-button {
+        padding: 6px 14px;
+        font-size: 14px;
+        cursor: pointer;
+        height: 40px;
+        background: #2a2a2a;
+        color: #ffffff;
+        border: 1px solid #555;
+        border-radius: 4px;
+    }
+
+    .reset-button:hover {
+        background: #3a3a3a;
+    }
+</style>
+</head>
+
+<body>
+
+<div class="container">
+    <h2>Sin Wave with Phasor</h2>
+    <canvas id="waveCanvas" width="800" height="300"></canvas>
+
+    <div class="controls-phasor-row">
+        <div class="controls">
+            <div class="control-row">
+                <button onclick="changeAmplitude(10)">+</button>
+                <button onclick="changeAmplitude(-10)">−</button>
+                Amplitude
+            </div>
+            <div class="control-row">
+                <button onclick="changePhase(15)">+</button>
+                <button onclick="changePhase(-15)">−</button>
+                Phase (degrees)
+            </div>
+            <div class="control-row">
+                <button onclick="changeOmega(0.2)">+</button>
+                <button onclick="changeOmega(-0.2)">−</button>
+                Angular Frequency ω
+            </div>
+            <div class="control-row">
+                <button onclick="changeDC(10)">+</button>
+                <button onclick="changeDC(-10)">−</button>
+                DC Offset
+            </div>
+        </div>
+
+        <div class="phasor-reset-container">
+            <div class="phasor-container">
+                <canvas id="phasorCanvas" width="200" height="200"></canvas>
+            </div>
+            <button class="reset-button" onclick="location.reload()">Reset</button>
+        </div>
+    </div>
+</div>
+
+<script>
+const canvas = document.getElementById("waveCanvas");
+const ctx = canvas.getContext("2d");
+
+const phasorCanvas = document.getElementById("phasorCanvas");
+const pctx = phasorCanvas.getContext("2d");
+
+// Reference wave
+const refAmplitude = 50;
+const refPhaseDeg = 0;
+const refDC = 0;
+const refOmega = 1;
+
+// Adjustable wave
+let amplitude = 50;
+let phaseDeg = 0;
+let omega = 1;
+let dcOffset = 0;
+
+function degToRad(deg) {
+    return deg * Math.PI / 180;
+}
+
+// Arrow drawing
+function drawArrow(ctx, fromX, fromY, toX, toY, color) {
+    const headLength = 10;
+    const dx = toX - fromX;
+    const dy = toY - fromY;
+    const angle = Math.atan2(dy, dx);
+
+    ctx.beginPath();
+    ctx.moveTo(fromX, fromY);
+    ctx.lineTo(toX, toY);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(toX, toY);
+    ctx.lineTo(
+        toX - headLength * Math.cos(angle - Math.PI / 6),
+        toY - headLength * Math.sin(angle - Math.PI / 6)
+    );
+    ctx.lineTo(
+        toX - headLength * Math.cos(angle + Math.PI / 6),
+        toY - headLength * Math.sin(angle + Math.PI / 6)
+    );
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.fill();
+}
+
+function drawSine(amplitude, phaseDeg, dc, omega, color) {
+    ctx.beginPath();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+
+    const centerY = canvas.height / 2;
+    const phaseRad = degToRad(phaseDeg);
+
+    for (let x = 0; x < canvas.width; x++) {
+        const t = x * 0.02;
+        const y = centerY - (amplitude * Math.sin(omega * t + phaseRad) + dc);
+        if (x === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+}
+
+function drawAxes() {
+    ctx.strokeStyle = "#666";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, canvas.height / 2);
+    ctx.lineTo(canvas.width, canvas.height / 2);
+    ctx.stroke();
+}
+
+function drawEquationTitle() {
+    const text = `${amplitude} sin(${omega.toFixed(2)}t + ${phaseDeg}°) + ${dcOffset}`;
+    ctx.font = "26px Times New Roman";
+    ctx.fillStyle = "#ffffff";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.fillText(text, canvas.width / 2, 8);
+    ctx.textAlign = "start";
+}
+
+// Phasor
+function drawPhasor() {
+    pctx.clearRect(0, 0, phasorCanvas.width, phasorCanvas.height);
+
+    const centerX = phasorCanvas.width / 2;
+    const centerY = phasorCanvas.height / 2;
+    const radius = 70;
+
+    pctx.beginPath();
+    pctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+    pctx.strokeStyle = "#666";
+    pctx.lineWidth = 1;
+    pctx.stroke();
+
+    pctx.font = "14px Arial";
+    pctx.fillStyle = "#ffffff";
+    pctx.fillText("0°", centerX + radius + 5, centerY - 5);
+    pctx.fillText("90°", centerX - 10, centerY - radius - 5);
+    pctx.fillText("180°", centerX - radius - 25, centerY - 5);
+    pctx.fillText("-90°", centerX - 10, centerY + radius + 15);
+
+    drawArrow(
+        pctx,
+        centerX,
+        centerY,
+        centerX + refAmplitude * Math.cos(degToRad(refPhaseDeg)),
+        centerY - refAmplitude * Math.sin(degToRad(refPhaseDeg)),
+        "#ff5555"
+    );
+
+    drawArrow(
+        pctx,
+        centerX,
+        centerY,
+        centerX + amplitude * Math.cos(degToRad(phaseDeg)),
+        centerY - amplitude * Math.sin(degToRad(phaseDeg)),
+        "#4aa3ff"
+    );
+}
+
+function drawWaves() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    drawAxes();
+    drawSine(refAmplitude, refPhaseDeg, refDC, refOmega, "#ff5555");
+    drawSine(amplitude, phaseDeg, dcOffset, omega, "#4aa3ff");
+    drawEquationTitle();
+    drawPhasor();
+}
+
+// Controls
+function changeAmplitude(delta) { amplitude += delta; drawWaves(); }
+function changePhase(delta) { phaseDeg += delta; drawWaves(); }
+function changeOmega(delta) { omega = Math.max(0.1, omega + delta); drawWaves(); }
+function changeDC(delta) { dcOffset += delta; drawWaves(); }
+
+drawWaves();
+</script>
+
+</body>
+</html>

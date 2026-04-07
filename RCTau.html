@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RC Circuit: Voltage (Left) & Current (Right)</title>
+  <style>
+    :root {
+      --bg: #0b1220;
+      --panel: #121a2b;
+      --text: #e7eefc;
+      --muted: #a9b7d0;
+      --grid: rgba(255,255,255,0.08);
+      --fixed: #5eead4;  /* teal */
+      --var: #60a5fa;    /* blue */
+      --axis: rgba(255,255,255,0.35);
+    }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background: linear-gradient(180deg, var(--bg), #070b14);
+      color: var(--text);
+    }
+    .wrap { max-width: 900px; margin: 28px auto; padding: 0 16px 24px; }
+    h1 { font-size: 20px; margin: 0 0 10px; font-weight: 700; }
+    .card {
+      background: rgba(18, 26, 43, 0.85);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 14px;
+      padding: 14px;
+      box-shadow: 0 10px 24px rgba(0,0,0,0.35);
+    }
+    .controls {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: center;
+      margin: 12px 0 12px;
+      padding: 12px;
+      border-radius: 12px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+    .controls label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+    input[type="range"] { width: 100%; accent-color: var(--var); }
+    .readout { text-align: right; min-width: 240px; font-variant-numeric: tabular-nums; }
+    .readout .big { font-size: 16px; font-weight: 700; color: var(--text); }
+    .readout .small { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      margin: 6px 0 10px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .chip { display: inline-flex; align-items: center; gap: 8px; }
+    .dot { width: 10px; height: 10px; border-radius: 999px; display: inline-block; }
+
+    .plots {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    @media (max-width: 860px) {
+      .plots { grid-template-columns: 1fr; }
+    }
+
+    .plotCard {
+      border-radius: 12px;
+      background: rgba(0,0,0,0.12);
+      border: 1px solid rgba(255,255,255,0.06);
+      padding: 10px;
+    }
+    .plotTitle {
+      font-size: 13px;
+      color: rgba(231,238,252,0.95);
+      margin: 0 0 8px;
+      font-weight: 650;
+    }
+    canvas {
+      width: 100%;
+      height: 300px;
+      display: block;
+      border-radius: 12px;
+      background: rgba(0,0,0,0.18);
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+
+    .footer { margin-top: 10px; color: var(--muted); font-size: 12px; line-height: 1.4; }
+    code { background: rgba(255,255,255,0.06); padding: 2px 6px; border-radius: 6px; }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <h1>RC Time Constant</h1>
+
+    <div class="card">
+      <div class="controls">
+        <div>
+          <label for="tauSlider">Variable time constant τ (seconds):</label>
+          <input id="tauSlider" type="range" min="0" max="1" step="0.01" value="0.30" />
+        </div>
+        <div class="readout">
+          <div class="big">τ (variable) = <span id="tauValue">0.30</span> s</div>
+        </div>
+      </div>
+
+      <div class="legend">
+        <span class="chip"><span class="dot" style="background: var(--fixed)"></span>Fixed τ = 0.1 s</span>
+        <span class="chip"><span class="dot" style="background: var(--var)"></span>Variable τ (slider)</span>
+      </div>
+
+      <div class="plots">
+        <div class="plotCard">
+          <p class="plotTitle">Capacitor Voltage, Vc(t) </p>
+          <canvas id="vcPlot" aria-label="Voltage plot"></canvas>
+        </div>
+        <div class="plotCard">
+          <p class="plotTitle">Capacitor Current, ic(t) </p>
+          <canvas id="iPlot" aria-label="Current plot"></canvas>
+        </div>
+      </div>
+
+      <div class="footer">
+        Models: <code>Vc(t) = 1 − e^(−t/τ)</code> and <code>i(t)/i(0) = e^(−t/τ)</code> </code>.
+      </div>
+    </div>
+  </div>
+
+<script>
+(() => {
+  const vcCanvas = document.getElementById("vcPlot");
+  const iCanvas  = document.getElementById("iPlot");
+  const slider = document.getElementById("tauSlider");
+  const tauValueEl = document.getElementById("tauValue");
+
+  // ---- Settings ----
+  const tauFixed = 0.10;
+  const tMax = 1.0;       // seconds
+  const nTauMax = 5;      // 1τ..5τ
+  const N = 700;
+
+  // axis padding
+  const pad = { left: 58, right: 18, top: 18, bottom: 48 };
+
+  const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+
+  // ---- Models (normalized) ----
+  function Vc(t, tau) {
+    if (tau <= 1e-9) return (t <= 0) ? 0 : 1; // instant jump
+    return 1 - Math.exp(-t / tau);
+  }
+  function Inorm(t, tau) {
+    if (tau <= 1e-9) return (t <= 0) ? 1 : 0; // instant drop
+    return Math.exp(-t / tau);
+  }
+
+  // ---- roundRect polyfill ----
+  if (!CanvasRenderingContext2D.prototype.roundRect) {
+    CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+      r = Math.min(r, w/2, h/2);
+      this.beginPath();
+      this.moveTo(x + r, y);
+      this.arcTo(x + w, y, x + w, y + h, r);
+      this.arcTo(x + w, y + h, x, y + h, r);
+      this.arcTo(x, y + h, x, y, r);
+      this.arcTo(x, y, x + w, y, r);
+      this.closePath();
+      return this;
+    }
+  }
+
+  // ---- Generic plot renderer ----
+  function renderPlot(canvas, ctx, opts) {
+    const {
+      yLabel,
+      titleText,
+      yMax,
+      modelFn,
+      tauVar,
+      fixedColor,
+      varColor,
+      labelPrefixFixed = "F:",
+      labelPrefixVar = "V:",
+    } = opts;
+
+    const rect = canvas.getBoundingClientRect();
+    const w = rect.width;
+    const h = rect.height;
+    const plotW = w - pad.left - pad.right;
+    const plotH = h - pad.top - pad.bottom;
+
+    // background
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = "rgba(0,0,0,0.16)";
+    ctx.fillRect(0, 0, w, h);
+
+    // plot area
+    ctx.fillStyle = "rgba(255,255,255,0.03)";
+    ctx.fillRect(pad.left, pad.top, plotW, plotH);
+
+    // grid
+    ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--grid").trim();
+    ctx.lineWidth = 1;
+    const xTicks = 10;
+    const yTicks = 10;
+
+    for (let i = 0; i <= xTicks; i++) {
+      const x = pad.left + (i / xTicks) * plotW;
+      ctx.beginPath();
+      ctx.moveTo(x, pad.top);
+      ctx.lineTo(x, pad.top + plotH);
+      ctx.stroke();
+    }
+    for (let i = 0; i <= yTicks; i++) {
+      const y = pad.top + plotH - (i / yTicks) * plotH;
+      ctx.beginPath();
+      ctx.moveTo(pad.left, y);
+      ctx.lineTo(pad.left + plotW, y);
+      ctx.stroke();
+    }
+
+    // axes
+    ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--axis").trim();
+    ctx.lineWidth = 1.6;
+
+    // x axis
+    ctx.beginPath();
+    ctx.moveTo(pad.left, pad.top + plotH);
+    ctx.lineTo(pad.left + plotW, pad.top + plotH);
+    ctx.stroke();
+
+    // y axis
+    ctx.beginPath();
+    ctx.moveTo(pad.left, pad.top);
+    ctx.lineTo(pad.left, pad.top + plotH);
+    ctx.stroke();
+
+    // tick labels
+    ctx.font = "12px system-ui, -apple-system, Segoe UI, Roboto, Arial";
+    ctx.fillStyle = "rgba(169,183,208,0.95)";
+
+    // x ticks
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    for (let i = 0; i <= xTicks; i++) {
+      const t = (i / xTicks) * tMax;
+      const x = pad.left + (i / xTicks) * plotW;
+      ctx.fillText(t.toFixed(1), x, pad.top + plotH + 7);
+    }
+
+    // y ticks
+    ctx.textAlign = "right";
+    ctx.textBaseline = "middle";
+    for (let i = 0; i <= yTicks; i++) {
+      const v = (i / yTicks) * yMax;
+      const y = pad.top + plotH - (i / yTicks) * plotH;
+      ctx.fillText(v.toFixed(1), pad.left - 8, y);
+    }
+
+    // axis titles
+    ctx.fillStyle = "rgba(231,238,252,0.95)";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "bottom";
+    ctx.fillText("Time, t (s)", pad.left + plotW / 2, h - 8);
+
+    ctx.save();
+    ctx.translate(14, pad.top + plotH / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.fillText(yLabel, 0, 0);
+    ctx.restore();
+
+    // title inside plot
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+    ctx.font = "13px system-ui, -apple-system, Segoe UI, Roboto, Arial";
+    ctx.fillText(titleText, pad.left + 10, pad.top + 8);
+
+    // transforms
+    const toX = (t) => pad.left + (t / tMax) * plotW;
+    const toY = (v) => pad.top + plotH - (v / yMax) * plotH;
+
+    function drawCurve(tau, color) {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2.7;
+      ctx.lineJoin = "round";
+      ctx.lineCap = "round";
+
+      ctx.beginPath();
+      for (let i = 0; i <= N; i++) {
+        const t = (i / N) * tMax;
+        const y = clamp(modelFn(t, tau), 0, yMax);
+        const x = toX(t);
+        const yy = toY(y);
+        if (i === 0) ctx.moveTo(x, yy);
+        else ctx.lineTo(x, yy);
+      }
+      ctx.stroke();
+    }
+
+    function drawNTauMarkers(tau, color, prefix, placementKey) {
+      if (tau <= 1e-9) return;
+
+      ctx.save();
+      ctx.setLineDash([6, 6]);
+      ctx.lineWidth = 1.2;
+
+      for (let n = 1; n <= nTauMax; n++) {
+        const t = n * tau;
+        if (t > tMax) break;
+
+        const yVal = clamp(modelFn(t, tau), 0, yMax);
+        const x = toX(t);
+        const y = toY(yVal);
+
+        // vertical guide
+        ctx.strokeStyle = color;
+        ctx.globalAlpha = 0.28;
+        ctx.beginPath();
+        ctx.moveTo(x, pad.top);
+        ctx.lineTo(x, pad.top + plotH);
+        ctx.stroke();
+
+        // dot
+        ctx.globalAlpha = 1.0;
+        ctx.setLineDash([]);
+        ctx.fillStyle = color;
+        ctx.strokeStyle = "rgba(0,0,0,0.55)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(x, y, 5.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // label at marker
+        const isEven = (n % 2 === 0);
+        const dx = 10;
+        const baseDy = (placementKey === "fixed") ? -10 : 14;
+        const dy = baseDy + (isEven ? -10 : 0);
+
+        const labelX = clamp(x + dx, pad.left + 4, pad.left + plotW - 4);
+        const labelY = clamp(y + dy, pad.top + 10, pad.top + plotH - 10);
+        const text = `${prefix}${n}\u03C4`;
+
+        ctx.font = "12px system-ui, -apple-system, Segoe UI, Roboto, Arial";
+        ctx.textAlign = "left";
+        ctx.textBaseline = "middle";
+
+        const tw = ctx.measureText(text).width;
+        const th = 14;
+        ctx.fillStyle = "rgba(0,0,0,0.45)";
+        ctx.roundRect(labelX - 4, labelY - th/2 - 2, tw + 8, th + 4, 6);
+        ctx.fill();
+
+        ctx.fillStyle = "rgba(231,238,252,0.95)";
+        ctx.fillText(text, labelX, labelY);
+
+        // back to dashed for next
+        ctx.setLineDash([6, 6]);
+        ctx.lineWidth = 1.2;
+      }
+      ctx.restore();
+    }
+
+    // curves
+    drawCurve(tauFixed, fixedColor);
+    drawCurve(tauVar, varColor);
+
+    // markers
+    drawNTauMarkers(tauFixed, fixedColor, labelPrefixFixed, "fixed");
+    drawNTauMarkers(tauVar,  varColor,  labelPrefixVar,  "var");
+  }
+
+  // ---- Resize canvases to CSS size (crisp) ----
+  function resizeCanvasToCSS(canvas, ctx) {
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.height * dpr);
+    // draw in CSS pixel coordinates
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  function renderAll() {
+    const tauVar = parseFloat(slider.value);
+    tauValueEl.textContent = tauVar.toFixed(2);
+
+    const fixedColor = getComputedStyle(document.documentElement).getPropertyValue("--fixed").trim();
+    const varColor   = getComputedStyle(document.documentElement).getPropertyValue("--var").trim();
+
+    const vcCtx = vcCanvas.getContext("2d");
+    const iCtx  = iCanvas.getContext("2d");
+
+    renderPlot(vcCanvas, vcCtx, {
+      yLabel: "Voltage, Vc (V)",
+      //titleText: "Vc(t) = 1 − e^(−t/τ)",
+	titleText: "",
+      yMax: 1.0,
+      modelFn: Vc,
+      tauVar,
+      fixedColor,
+      varColor,
+      // remove prefixes if you want: set to "" below
+      labelPrefixFixed: "",
+      labelPrefixVar: ""
+    });
+
+    renderPlot(iCanvas, iCtx, {
+      yLabel: "Current, i/i(0)",
+      titleText: "",
+	//titleText: "Vc(t) = 1 − e^(−t/τ)",
+      yMax: 1.0,
+      modelFn: Inorm,
+      tauVar,
+      fixedColor,
+      varColor,
+      labelPrefixFixed: "",
+      labelPrefixVar: ""
+    });
+  }
+
+  function onResize() {
+    resizeCanvasToCSS(vcCanvas, vcCanvas.getContext("2d"));
+    resizeCanvasToCSS(iCanvas,  iCanvas.getContext("2d"));
+    renderAll();
+  }
+
+  slider.addEventListener("input", renderAll);
+  window.addEventListener("resize", onResize);
+
+  // initial
+  onResize();
+})();
+</script>
+</body>
+</html>
