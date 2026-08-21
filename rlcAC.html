@@ -7,12 +7,12 @@
   <style>
     :root{--bg:#0b1220;--card:#111b2e;--text:#e8eefc;--muted:#a9b5d1;--accent:#4cc9f0;--accent2:#f72585;--grid:#1d2a46;}
     body{margin:0;background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);color:#2c3e50;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;min-height:100vh;padding:20px;box-sizing:border-box;}
-    header{padding:14px 16px 8px;}
-    h1{margin:0 0 6px;font-size:18px;letter-spacing:.2px;color:#ffffff;}
-    .sub{color:#ffffff;font-size:12px;line-height:1.35;}
+    main{background:#ffffff;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,0.3);max-width:1000px;margin:0 auto;padding:16px;}
+    h1{margin:0 0 12px;font-size:18px;letter-spacing:.2px;color:#2c3e50;}
+    .sub{color:#6c757d;font-size:12px;line-height:1.35;}
 
-    main{display:grid;grid-template-columns:0.5fr 1fr;grid-template-rows:auto auto;gap:12px;padding:10px 16px 16px;align-items:stretch;background:#ffffff;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,0.3);max-width:1000px;margin:0 auto;}
-    @media (max-width: 980px){main{grid-template-columns:1fr;grid-template-rows:auto;}}
+    .grid{display:grid;grid-template-columns:0.5fr 1fr;grid-template-rows:auto auto;gap:12px;align-items:stretch;}
+    @media (max-width: 980px){.grid{grid-template-columns:1fr;grid-template-rows:auto;}}
 
     .card{background:#f8f9fa;border:1px solid #e0e6ed;border-radius:14px;box-shadow:none;}
     .card h2{font-size:18px;margin:0;padding:12px 12px 8px;border-bottom:1px solid #e0e6ed;color:#2c3e50;}
@@ -82,12 +82,11 @@
   </style>
 </head>
 <body>
-<header>
+<main>
   <h1>Series RLC AC Simulator</h1>
   <div class="sub"></div>
-</header>
 
-<main>
+  <div class="grid">
   <section class="card" id="card-input" style="grid-row:1 / span 2;">
     <h2>Input</h2>
     <div class="content">
@@ -172,6 +171,7 @@
       <div class="note">Fixed-length phasors. Blue: V at 0°. Pink: I at ∠I.</div>
     </div>
   </section>
+  </div>
 </main>
 
 <script>
